@@ -1,0 +1,38 @@
+---
+- hosts: all
+  gather_facts: true
+  become_user: root
+  vars:
+    root_vol: root_vol
+    root_vg: vg_system_01
+    extend_size: 3
+    ansible_remote_tmp: /tmp/.ansible/tmp
+  tasks:
+    - ansible.builtin.debug:
+        msg: "Extending root volume {{ root_vol }} on VG {{ root_vg }} by {{ extend_size }}GB"
+
+    - name: Get freespace on the volume group
+      ansible.builtin.shell: /usr/sbin/vgs --options vg_name,vg_free --noheadings --units g "{{ root_vg }}" | awk '{print $2}'
+      become: true
+      register: vgs_reg
+    - ansible.builtin.debug:
+        msg: "Free space in VG {{ root_vg }} is {{ vgs_reg.stdout }}"
+    # We need an int from now on
+    - ansible.builtin.set_fact:
+        vg_freespace: "{{ vgs_reg.stdout.split('.')[0] }}"
+
+    - name: Extend the root filesystem when sufficient free space is available
+      block:
+        - ansible.builtin.debug:
+            msg: "There is more than {{ extend_size }}GB free on {{ root_vg }} - OK to proceed"
+        - community.general.lvol:
+            vg: "{{ root_vg }}"
+            lv: "{{ root_vol }}"
+            size: "+{{ extend_size }}g"
+            resizefs: true
+          become: true
+      when: vg_freespace | int > extend_size | int
+
+    - ansible.builtin.debug:
+        msg: "There is insufficient free space on {{ root_vg }} - cannot proceed with resize"
+      when: vg_freespace | int <= extend_size | int
