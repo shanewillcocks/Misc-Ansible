@@ -1,0 +1,58 @@
+---
+# Validate installer against checksum
+- hosts: all
+  become: false
+  gather_facts: false
+  vars:
+    scan_assistant_rpm_url: https://<NEXUS_REPOHOST>/repository/raw-r7/Rapid7_Scan_Assistant/Linux/Test/R7ScanAssistant_amd64.rpm
+    scan_assistant_csm_url: https://<NEXUS_REPOHOST>/repository/raw-r7/Rapid7_Scan_Assistant/Linux/Test/R7ScanAssistant_amd64.rpm.sha512sum
+    insights_agent_rpm_url: https://<NEXUS_REPOHOST>/repository/raw-r7/Rapid7_InsightVM_Agent/Linux/Test/rapid7-insight-agent-4.1.0.2-1.x86_64.rpm
+    insights_agent_csm_url: https://<NEXUS_REPOHOST>/repository/raw-r7/Rapid7_InsightVM_Agent/Linux/Test/rapid7-insight-agent-4.1.0.2-1.sha256
+    download_dir: /tmp/rapid7
+    debug_mode: true
+
+  tasks:
+    - name: Ensure download directory exists
+      ansible.builtin.file:
+        path: "{{ download_dir }}"
+        state: directory
+
+    - name: Download and parse the scan assistant checksum
+      block:
+        - ansible.builtin.get_url:
+            url: "{{ scan_assistant_csm_url }}"
+            dest: "{{ download_dir }}/{{ scan_assistant_csm_url | basename }}"
+        - ansible.builtin.slurp:
+            src: "{{ download_dir }}/{{ scan_assistant_csm_url | basename }}"
+          register: scan_assistant_csm_reg
+        - ansible.builtin.set_fact:
+            scan_assistent_checksum: "sha512:{{ ( scan_assistant_csm_reg.content | b64decode ).split()[0] }}"
+        - ansible.builtin.debug:
+            msg: "Downloaded checksum for Rapid7 scan assistant is: {{ scan_assistent_checksum }}"
+          when: debug_mode | bool
+
+    - name: Download and validate scan assistant
+      ansible.builtin.get_url:
+        url: "{{ scan_assistant_rpm_url }}"
+        dest: "{{ download_dir }}/{{ scan_assistant_rpm_url | basename }}"
+        checksum: "{{ scan_assistent_checksum }}"
+
+    - name: Download and parse the insights agent checksum
+      block:
+        - ansible.builtin.get_url:
+            url: "{{ insights_agent_csm_url }}"
+            dest: "{{ download_dir }}/{{ insights_agent_rpm_url | basename }}"
+        - ansible.builtin.slurp:
+            src: "{{ download_dir }}/{{ insights_agent_rpm_url | basename }}"
+          register: insights_agent_csm_reg
+        - ansible.builtin.set_fact:
+            insights_agent_checksum: "sha256:{{ ( insights_agent_csm_reg.content | b64decode ).split()[0] }}"
+        - ansible.builtin.debug:
+            msg: "Downloaded checksum for Rapid7 insights agent: {{ insights_agent_checksum }}"
+          when: debug_mode | bool
+
+    - name: Download and validate insights agent
+      ansible.builtin.get_url:
+        url: "{{ insights_agent_rpm_url }}"
+        dest: "{{ download_dir }}/{{ insights_agent_rpm_url | basename }}"
+        checksum: "{{ insights_agent_checksum }}"
